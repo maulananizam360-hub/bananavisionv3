@@ -7,7 +7,7 @@
 #   - Pakai tensorflow==2.15.0 untuk kompatibilitas umum
 
 tensorflow-cpu==2.20.0
-keras==3.3.3
+keras==3.10.0
 fastapi==0.111.0
 uvicorn[standard]==0.30.0
 python-multipart==0.0.9
