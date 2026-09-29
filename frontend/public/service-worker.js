@@ -1,4 +1,4 @@
-const CACHE_NAME = "bananavision-v1";
+const CACHE_NAME = "bananavision-v2";
 const OFFLINE_URL = "/offline.html";
 
 // Only cache known root-level assets here. Avoid hardcoding Vite build asset names.
@@ -44,6 +44,7 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   // Only handle GET requests
   if (event.request.method !== "GET") return;
+  if (new URL(event.request.url).origin !== self.location.origin) return;
 
   event.respondWith(
     caches.match(event.request).then((response) => {
@@ -68,7 +69,11 @@ self.addEventListener("fetch", (event) => {
             return networkResponse;
           });
         })
-        .catch(() => caches.match(OFFLINE_URL));
+        .catch(() =>
+          event.request.mode === "navigate"
+            ? caches.match(OFFLINE_URL)
+            : Response.error()
+        );
     })
   );
 });

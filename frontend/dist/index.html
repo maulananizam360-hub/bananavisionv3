@@ -10,6 +10,7 @@
     <!-- PWA manifest -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#10b981" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="BananaVision" />
@@ -29,6 +30,8 @@
     <script>
       window.__deferredInstallPrompt = null;
       window.addEventListener('beforeinstallprompt', function(e) {
+        const isMobile = /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile/i.test(navigator.userAgent);
+        if (!isMobile) return;
         e.preventDefault();
         window.__deferredInstallPrompt = e;
         console.log('[PWA] beforeinstallprompt captured early');
