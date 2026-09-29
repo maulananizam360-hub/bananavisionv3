@@ -6,7 +6,7 @@
 #   - GPU (server dengan NVIDIA GPU): tensorflow[and-cuda]==2.15.0
 #   - Pakai tensorflow==2.15.0 untuk kompatibilitas umum
 
-tensorflow-cpu==2.16.1
+tensorflow-cpu==2.20.0
 keras==3.3.3
 fastapi==0.111.0
 uvicorn[standard]==0.30.0
