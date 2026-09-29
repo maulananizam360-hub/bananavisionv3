@@ -17,6 +17,9 @@ class AnalysisService {
         },
         {
           timeout: 30000, // 30 second timeout
+          headers: {
+            Authorization: `Bearer ${process.env.MODEL_SYNC_TOKEN || ""}`,
+          },
         },
       );
 

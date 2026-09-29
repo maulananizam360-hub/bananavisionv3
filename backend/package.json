@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@prisma/client": "^4.16.0",
+    "@supabase/supabase-js": "^2.117.2",
     "axios": "^1.13.5",
     "bcryptjs": "^2.4.3",
     "body-parser": "^2.2.0",
@@ -17,6 +18,7 @@
     "multer": "^2.1.1",
     "nodemon": "^3.1.10",
     "router": "^2.2.0",
+    "tus-js-client": "^4.3.1",
     "xss-clean": "^0.1.4"
   },
   "name": "express",

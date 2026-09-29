@@ -9,7 +9,7 @@ import tensorflow as tf
 from PIL import Image
 import io
 import base64
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Header
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -22,6 +22,7 @@ ACTIVE_MODEL_JSON = os.path.join(MODEL_DIR, "active_model.json")
 
 # Node.js backend URL
 NODE_BACKEND_URL = os.environ.get("NODE_BACKEND_URL", "http://localhost:5000/api").rstrip("/")
+MODEL_SYNC_TOKEN = os.environ.get("MODEL_SYNC_TOKEN")
 
 MODEL_CONFIG = {
     "mobilenetv2": {
@@ -74,6 +75,13 @@ disease_model = None
 imagenet_model = None
 
 
+def require_service_token(authorization: Optional[str]) -> None:
+    if not MODEL_SYNC_TOKEN:
+        raise HTTPException(status_code=503, detail="Service token is not configured")
+    if authorization != f"Bearer {MODEL_SYNC_TOKEN}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
 @app.on_event("startup")
 async def load_model():
     global disease_model, imagenet_model, MODEL_TYPE, ACTIVE_FILENAME, ACTIVE_URL, _cfg
@@ -98,7 +106,11 @@ async def load_model():
         print(f"Querying Node.js backend for active model info: {NODE_BACKEND_URL}/admin/models/active-info")
         try:
             import urllib.request as urlreq
-            with urlreq.urlopen(f"{NODE_BACKEND_URL}/admin/models/active-info", timeout=15) as resp:
+            sync_request = urlreq.Request(
+                f"{NODE_BACKEND_URL}/admin/models/active-info",
+                headers={"Authorization": f"Bearer {MODEL_SYNC_TOKEN}"} if MODEL_SYNC_TOKEN else {},
+            )
+            with urlreq.urlopen(sync_request, timeout=15) as resp:
                 data = json.loads(resp.read())
                 model_info = data.get("data")
                 if model_info and model_info.get("filename") and model_info.get("url"):
@@ -107,6 +119,7 @@ async def load_model():
                     node_type = model_info.get("modelType", "mobilenetv2").lower()
                     print(f"Auto-downloading active model from backend: {node_filename} @ {node_url}")
                     target_path = os.path.join(MODEL_DIR, node_filename)
+                    os.makedirs(MODEL_DIR, exist_ok=True)
                     urlreq.urlretrieve(node_url, target_path)
                     print("Auto-download complete")
                     # Update globals
@@ -511,8 +524,12 @@ def run_prediction(image_data) -> dict:
 
 # API Endpoints
 @app.post("/api/predict", response_model=PredictionResponse)
-async def predict(request: PredictionRequest):
+async def predict(
+    request: PredictionRequest,
+    authorization: Optional[str] = Header(default=None),
+):
     """ML prediction endpoint (base64 image)"""
+    require_service_token(authorization)
     try:
         if not request.image:
             raise HTTPException(status_code=400, detail="No image provided")
@@ -524,14 +541,17 @@ async def predict(request: PredictionRequest):
         raise
     except Exception as e:
         import traceback
-        tb = traceback.format_exc()
-        print(f"Prediction error:\n{tb}")
-        raise HTTPException(status_code=500, detail=f'Prediction failed: {str(e)}\nTraceback:\n{tb}')
+        print(f"Prediction error:\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Prediction failed") from e
 
 
 @app.post("/api/predict-file", response_model=PredictionResponse)
-async def predict_file(file: UploadFile = File(...)):
+async def predict_file(
+    file: UploadFile = File(...),
+    authorization: Optional[str] = Header(default=None),
+):
     """ML prediction endpoint with file upload"""
+    require_service_token(authorization)
     contents = None
     try:
         # Validate file type
@@ -563,9 +583,8 @@ async def predict_file(file: UploadFile = File(...)):
         raise
     except Exception as e:
         import traceback
-        tb = traceback.format_exc()
-        print(f"predict_file error:\n{tb}")
-        raise HTTPException(status_code=500, detail=f'Prediction failed: {str(e)}\nTraceback:\n{tb}')
+        print(f"predict_file error:\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Prediction failed") from e
     finally:
         # Always close the upload file to free resources
         await file.close()
@@ -595,26 +614,29 @@ class ReloadRequest(BaseModel):
     url: Optional[str] = None  # Optional URL to download (None = file is local)
 
 @app.post("/api/reload")
-async def reload_model(request: ReloadRequest):
+async def reload_model(
+    request: ReloadRequest,
+    authorization: Optional[str] = Header(default=None),
+):
     global disease_model, imagenet_model, MODEL_TYPE, ACTIVE_FILENAME, ACTIVE_URL, _cfg
 
+    require_service_token(authorization)
     model_type = request.model_type.lower().strip()
     if model_type not in MODEL_CONFIG:
         raise HTTPException(status_code=400, detail=f"Model type '{model_type}' tidak didukung. Gunakan 'mobilenetv2' atau 'resnet50'.")
 
     model_path = os.path.join(MODEL_DIR, request.filename)
-    if not os.path.exists(model_path):
-        if request.url:
-            import urllib.request
-            print(f"Downloading model from {request.url} to {model_path}...")
-            try:
-                os.makedirs(os.path.dirname(model_path), exist_ok=True)
-                urllib.request.urlretrieve(request.url, model_path)
-                print("Download complete")
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Gagal mendownload model dari Cloud Storage: {str(e)}")
-        else:
-            raise HTTPException(status_code=404, detail=f"File model '{request.filename}' tidak ditemukan di server")
+    if request.url:
+        import urllib.request
+        print(f"Downloading model from {request.url} to {model_path}...")
+        try:
+            os.makedirs(MODEL_DIR, exist_ok=True)
+            urllib.request.urlretrieve(request.url, model_path)
+            print("Download complete")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Gagal mendownload model dari Cloud Storage: {str(e)}")
+    elif not os.path.exists(model_path):
+        raise HTTPException(status_code=404, detail=f"File model '{request.filename}' tidak ditemukan di server")
 
     # Use lock to prevent concurrent reloads from corrupting global state
     async with _model_lock:
@@ -676,11 +698,14 @@ async def reload_model(request: ReloadRequest):
         except Exception as e:
             import traceback
             print(f"Failed to reload model:\n{traceback.format_exc()}")
-            raise HTTPException(status_code=500, detail=f"Gagal memuat model: {str(e)}")
+            raise HTTPException(status_code=500, detail="Gagal memuat model") from e
 
 @app.get("/api/models")
-async def list_available_models():
+async def list_available_models(
+    authorization: Optional[str] = Header(default=None),
+):
     """List all available .keras model files inside python/ directory"""
+    require_service_token(authorization)
     try:
         files = os.listdir(MODEL_DIR)
         model_files = [f for f in files if f.endswith(".keras")]
@@ -697,4 +722,4 @@ async def list_available_models():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8000")))

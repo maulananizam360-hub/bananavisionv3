@@ -54,6 +54,16 @@ router.put("/models/:id/activate", authenticateAdmin, MlModelController.activate
 router.delete("/models/:id", authenticateAdmin, MlModelController.deleteModel);
 
 // Endpoint untuk diakses Python server saat startup
-router.get("/models/active-info", MlModelController.getActiveModelInfo);
+router.get("/models/active-info", (req, res, next) => {
+  const syncToken = process.env.MODEL_SYNC_TOKEN;
+  if (!syncToken && process.env.NODE_ENV !== "production") return next();
+  if (!syncToken) {
+    return res.status(503).json({ success: false, message: "MODEL_SYNC_TOKEN belum dikonfigurasi" });
+  }
+  if (req.get("authorization") !== `Bearer ${syncToken}`) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+  return next();
+}, MlModelController.getActiveModelInfo);
 
 module.exports = router;

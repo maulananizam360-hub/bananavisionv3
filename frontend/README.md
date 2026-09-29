@@ -37,12 +37,13 @@ Untuk deploy frontend ke Vercel:
 
 1. Pastikan project yang dipilih adalah folder `frontend`.
 2. Set environment variables di dashboard Vercel:
-   - `VITE_API_BASE_URL`
+   - `VITE_API_BASE_URL=https://bananavisionv3-production-12ee.up.railway.app/api`
    - `VITE_FIREBASE_API_KEY`
    - `VITE_FIREBASE_AUTH_DOMAIN`
    - `VITE_FIREBASE_PROJECT_ID`
    - `VITE_FIREBASE_APP_ID`
 3. Biarkan `Build Command` tetap `npm run build` dan `Output Directory` tetap `dist`.
+4. Setelah mengubah environment variable, lakukan redeploy agar nilai baru masuk ke bundle.
 
 Juga tersedia file `frontend/vercel.json` untuk konfigurasi build Vercel.
 

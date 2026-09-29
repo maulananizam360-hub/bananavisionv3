@@ -1,6 +1,6 @@
 # API Reference — BananaVision v3.1
 
-Base URL Production: `https://bananavisionv3-production.up.railway.app/api`
+Base URL Production: `https://bananavisionv3-production-12ee.up.railway.app/api`
 Base URL Local: `http://localhost:5000/api`
 
 Semua endpoint yang membutuhkan autentikasi user harus menyertakan header:

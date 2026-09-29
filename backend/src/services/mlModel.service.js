@@ -2,7 +2,17 @@ const MlModelModel = require("../models/mlModelModel");
 const axios = require("axios");
 const path = require("path");
 const fs = require("fs");
-const { getModelStorageDir, deleteModelFile } = require("../utils/localModelStorage");
+const {
+  getModelStorageDir,
+  confirmModelSaved,
+  deleteModelFile,
+} = require("../utils/localModelStorage");
+const {
+  isConfigured: isCloudStorageConfigured,
+  uploadModel,
+  createModelSignedUrl,
+  deleteModel: deleteCloudModel,
+} = require("../utils/supabaseStorage");
 
 const ML_SERVER_URL = (
   process.env.ML_SERVER_URL || "http://localhost:8000"
@@ -13,7 +23,11 @@ class MlModelService {
     try {
       let activePyModel = null;
       try {
-        const response = await axios.get(`${ML_SERVER_URL}/api/models`);
+        const response = await axios.get(`${ML_SERVER_URL}/api/models`, {
+          headers: {
+            Authorization: `Bearer ${process.env.MODEL_SYNC_TOKEN || ""}`,
+          },
+        });
         if (response.data && response.data.success) {
           activePyModel = response.data.active_model;
         }
@@ -55,7 +69,7 @@ class MlModelService {
     const modelStorageDir = getModelStorageDir();
     const modelPath = path.join(modelStorageDir, model.filename);
 
-    if (!fs.existsSync(modelPath)) {
+    if (!isCloudStorageConfigured && !fs.existsSync(modelPath)) {
       throw new Error(
         `File model '${model.filename}' tidak ditemukan di direktori penyimpanan server: ${modelStorageDir}. ` +
           `Pastikan model sudah diunggah dengan benar.`
@@ -63,11 +77,18 @@ class MlModelService {
     }
 
     try {
+      const modelUrl = isCloudStorageConfigured
+        ? await createModelSignedUrl(model.filename)
+        : null;
       console.log(`Sending reload request to ${ML_SERVER_URL}/api/reload for ${model.filename}...`);
       const response = await axios.post(`${ML_SERVER_URL}/api/reload`, {
         filename: model.filename,
         model_type: model.modelType === "custom" ? "mobilenetv2" : model.modelType,
-        url: null,
+        url: modelUrl,
+      }, {
+        headers: {
+          Authorization: `Bearer ${process.env.MODEL_SYNC_TOKEN || ""}`,
+        },
       });
 
       if (!response.data || !response.data.success) {
@@ -85,6 +106,34 @@ class MlModelService {
     await MlModelModel.deactivateAllExcept(id);
 
     return updated;
+  }
+
+  static async storeUploadedModel(filePath, filename) {
+    if (isCloudStorageConfigured) {
+      await uploadModel(filePath, filename);
+      return;
+    }
+
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "Model AI di Railway memerlukan Supabase Storage. Konfigurasikan SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY."
+      );
+    }
+
+    confirmModelSaved(filePath, filename);
+  }
+
+  static async getActiveModelInfo() {
+    const model = await this.getActiveModel();
+    if (!model) return null;
+
+    return {
+      filename: model.filename,
+      modelType: model.modelType,
+      url: isCloudStorageConfigured
+        ? await createModelSignedUrl(model.filename)
+        : null,
+    };
   }
 
   static async registerUploadedModel(name, filename, modelType, fileSize) {
@@ -113,6 +162,9 @@ class MlModelService {
       throw new Error("Model tidak ditemukan");
     }
 
+    if (isCloudStorageConfigured) {
+      await deleteCloudModel(model.filename);
+    }
     deleteModelFile(model.filename);
 
     return await MlModelModel.delete(id);

@@ -1,7 +1,7 @@
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL;
 
 // Fallback hanya dipakai saat development lokal dan VITE_API_BASE_URL tidak di-set
-const DEFAULT_BASE_URL = "http://localhost:5000/api";
+const DEFAULT_BASE_URL = "https://bananavisionv3-production-12ee.up.railway.app/api"; // Ganti dengan URL default yang sesuai
 
 let _warnedMissingUrl = false;
 

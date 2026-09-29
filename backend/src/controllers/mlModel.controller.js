@@ -1,6 +1,5 @@
 const MlModelService = require("../services/mlModel.service");
 const { successResponse, errorResponse } = require("../utils/response");
-const { getModelStorageDir } = require("../utils/localModelStorage");
 const fs = require("fs");
 const path = require("path");
 
@@ -44,6 +43,10 @@ class MlModelController {
       const fileSize = req.file.size;
 
       console.log(`Model file saved to server storage: ${req.file.path} (${fileSize} bytes)`);
+      await MlModelService.storeUploadedModel(req.file.path, filename);
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
 
       const registered = await MlModelService.registerUploadedModel(
         name,
@@ -104,20 +107,12 @@ class MlModelController {
 
   static async getActiveModelInfo(req, res) {
     try {
-      const activeModel = await MlModelService.getActiveModel();
+      const activeModel = await MlModelService.getActiveModelInfo();
       if (!activeModel) {
         return successResponse(res, null, "Tidak ada model aktif");
       }
 
-      return successResponse(
-        res,
-        {
-          filename: activeModel.filename,
-          modelType: activeModel.modelType,
-          url: null,
-        },
-        "Model aktif ditemukan"
-      );
+      return successResponse(res, activeModel, "Model aktif ditemukan");
     } catch (error) {
       console.error("Error getActiveModelInfo:", error.message);
       return errorResponse(res, error.message || "Gagal mengambil info model aktif", 500);
